@@ -67,12 +67,15 @@ throughput = sum(packet_sizes) * 8 / duration  # bit/s
 # Ortalama bekleme süresi
 avg_wait = sum(waiting_times) / len(waiting_times) if waiting_times else 0
 
-# Sonuçları yazdır
+# Drop oranı yüzdesi
+drop_rate = (drop / sent * 100) if sent else 0
+
+# ⏬ Sonuçları yazdır
 print("📊 NS-2 Trace Analizi Sonuçları")
-print(f"📁 Trace dosyası:             {trace_file}")
 print(f"📦 Gönderilen paket sayısı:   {sent}")
 print(f"📥 Alınan paket sayısı:       {recv}")
 print(f"❌ Düşen paket sayısı:        {drop}")
+print(f"📉 Drop Oranı:                %{drop_rate:.2f}")
 print(f"⏱ Simülasyon süresi:         {duration:.2f} saniye")
 print(f"📈 Throughput:                {throughput / 1000:.2f} Kbps")
 print(f"🕒 Avg. Waiting Time (0→2):   {avg_wait * 1000:.3f} ms ({len(waiting_times)} paket)")
