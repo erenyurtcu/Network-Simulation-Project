@@ -2,8 +2,8 @@
 set ns [new Simulator]
 
 # Dosya isimleri
-set tracefileName "case3_heavy_traffic.trace"
-set namfileName "case3_heavy_traffic.nam"
+set tracefileName "case3_heavy_traffic_drop.trace"
+set namfileName "case3_heavy_traffic_drop.nam"
 
 # Trace ve NAM dosyaları
 set namfile [open $namfileName w]
@@ -19,12 +19,17 @@ set r1 [$ns node]
 set sink1 [$ns node]
 set sink2 [$ns node]
 
-# Bağlantılar (yoğun trafik için merkezde r1 var)
+# Bağlantılar – Router çıkış bağlantı hızı düşük tutuldu
 $ns duplex-link $n1 $r1 2Mb 10ms DropTail
 $ns duplex-link $n2 $r1 2Mb 10ms DropTail
 $ns duplex-link $n3 $r1 2Mb 10ms DropTail
-$ns duplex-link $r1 $sink1 2Mb 10ms DropTail
-$ns duplex-link $r1 $sink2 2Mb 10ms DropTail
+$ns duplex-link $r1 $sink1 512Kb 10ms DropTail
+$ns duplex-link $r1 $sink2 512Kb 10ms DropTail
+
+# Kuyruk limitleri düşük ayarlandı – Drop oluşsun diye
+$ns queue-limit $n1 $r1 10
+$ns queue-limit $n2 $r1 10
+$ns queue-limit $n3 $r1 10
 
 # TCP bağlantıları ve sinkler
 set tcp1 [new Agent/TCP]
@@ -41,8 +46,7 @@ $ns connect $tcp2 $sinkB
 
 set tcp3 [new Agent/TCP]
 $ns attach-agent $n3 $tcp3
-# Aynı sinke bağlanabilir
-$ns connect $tcp3 $sinkA
+$ns connect $tcp3 $sinkA  ;# Aynı sinke bağlanabilir
 
 # Uygulamalar (FTP)
 set ftp1 [new Application/FTP]
@@ -54,13 +58,13 @@ $ftp2 attach-agent $tcp2
 set ftp3 [new Application/FTP]
 $ftp3 attach-agent $tcp3
 
-# Zamanlama
-$ns at 1.0 "$ftp1 start"
-$ns at 1.5 "$ftp2 start"
-$ns at 2.0 "$ftp3 start"
-$ns at 57.0 "$ftp1 stop"
-$ns at 58.0 "$ftp2 stop"
-$ns at 59.0 "$ftp3 stop"
+# Trafiği erken ve uzun süreli başlat
+$ns at 0.1 "$ftp1 start"
+$ns at 0.2 "$ftp2 start"
+$ns at 0.3 "$ftp3 start"
+$ns at 59.9 "$ftp1 stop"
+$ns at 59.9 "$ftp2 stop"
+$ns at 59.9 "$ftp3 stop"
 
 # Bitirme fonksiyonu
 proc finish {} {
