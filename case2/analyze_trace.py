@@ -1,16 +1,16 @@
 import os
 from collections import defaultdict
 
-# .last_trace_file'dan son trace dosyasını oku
+# .last_trace_file'dan trace dosyasını al
 try:
     with open(".last_trace_file", "r") as f:
         trace_file = f.read().strip()
 except FileNotFoundError:
-    print("❌ Hata: '.last_trace_file' bulunamadı. Lütfen bir .ns dosyası çalıştırın.")
+    print("❌ Error: '.last_trace_file' not found. Please run a .ns file first.")
     exit(1)
 
 if not os.path.exists(trace_file):
-    print(f"❌ Hata: '{trace_file}' dosyası bulunamadı.")
+    print(f"❌ Error: Trace file '{trace_file}' not found.")
     exit(1)
 
 sent = 0
@@ -20,13 +20,9 @@ packet_sizes = []
 start = None
 end = None
 
-# Bekleme süresi için kuyruk takibi (sadece 0→2 için)
-enqueue_times = {}
-waiting_times = []
-
-# Tüm bağlantılar için bekleme süresi (yeni eklenen kısım)
-all_enqueue_times = defaultdict(dict)   # {link_key: {pkt_id: enqueue_time}}
-all_waiting_times = defaultdict(list)   # {link_key: [wait_time1, wait_time2, ...]}
+# Kuyruk verileri
+all_enqueue_times = defaultdict(dict)   # {from->to: {pkt_id: enqueue_time}}
+all_waiting_times = defaultdict(list)   # {from->to: [waits]}
 
 with open(trace_file, "r") as f:
     for line in f:
@@ -41,31 +37,19 @@ with open(trace_file, "r") as f:
         size = int(fields[5])
         pkt_id = fields[11]
 
-        # Gönderilen paket sayımı
         if event == "+":
             sent += 1
             if start is None:
                 start = time
             packet_sizes.append(size)
 
-        # Alınan paket sayımı
         if event == "r":
             recv += 1
             end = time
 
-        # Düşen paket sayımı
         if event == "d":
             drop += 1
 
-        # Ortalama bekleme süresi (sadece 0→2 için)
-        if from_node == "0" and to_node == "2":
-            if event == "+":
-                enqueue_times[pkt_id] = time
-            elif event == "-" and pkt_id in enqueue_times:
-                wait = time - enqueue_times[pkt_id]
-                waiting_times.append(wait)
-
-        # 🔁 Tüm bağlantılar için bekleme süresi takibi
         link_key = f"{from_node}->{to_node}"
         if event == "+":
             all_enqueue_times[link_key][pkt_id] = time
@@ -73,30 +57,44 @@ with open(trace_file, "r") as f:
             wait = time - all_enqueue_times[link_key].pop(pkt_id)
             all_waiting_times[link_key].append(wait)
 
-# Süre & throughput
+# Metirk hesaplamaları
 duration = (end - start) if end and start else 1
 throughput = sum(packet_sizes) * 8 / duration  # bit/s
-
-# Ortalama bekleme süresi (0→2)
-avg_wait = sum(waiting_times) / len(waiting_times) if waiting_times else 0
-
-# Drop oranı yüzdesi
 drop_rate = (drop / sent * 100) if sent else 0
 
-# ⏬ Sonuçları yazdır
-print("📊 NS-2 Trace Analizi Sonuçları")
-print(f"📦 Gönderilen paket sayısı:   {sent}")
-print(f"📥 Alınan paket sayısı:       {recv}")
-print(f"❌ Düşen paket sayısı:        {drop}")
-print(f"📉 Drop Oranı:                %{drop_rate:.2f}")
-print(f"⏱ Simülasyon süresi:         {duration:.2f} saniye")
-print(f"📈 Throughput:                {throughput / 1000:.2f} Kbps")
-print(f"🕒 Avg. Waiting Time (0→2):   {avg_wait * 1000:.3f} ms ({len(waiting_times)} paket)")
+# Renkler
+RED = "\033[91m"
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+CYAN = "\033[96m"
+RESET = "\033[0m"
 
-# 🔁 Tüm bağlantılar için ortalama bekleme süresi yazdır
-print("🕒 Ortalama Bekleme Süreleri (Tüm Bağlantılar):")
+drop_color = RED if drop_rate > 5 else (YELLOW if drop_rate > 1 else GREEN)
+throughput_color = GREEN if throughput > 1000 else YELLOW
+duration_color = CYAN if duration < 60 else RESET
+
+# Genel başlık
+trace_name = os.path.splitext(os.path.basename(trace_file))[0]
+print(f"\n📊 NS-2 Trace Analysis Results — {RED}{trace_name}{RESET}")
+print(f"📦 Sent packets:              {CYAN}{sent}{RESET}")
+print(f"📥 Received packets:          {CYAN}{recv}{RESET}")
+print(f"❌ Dropped packets:           {drop_color}{drop}{RESET}")
+print(f"📉 Drop Rate:                 {drop_color}%{drop_rate:.2f}{RESET}")
+print(f"⏱ Simulation duration:       {duration_color}{duration:.2f} seconds{RESET}")
+print(f"📈 Throughput:                {throughput_color}{throughput / 1000:.2f} Kbps{RESET}")
+
+# Her bağlantı için ortalama bekleme süresi
+print(f"\n🕒 Avg. Waiting Times per Link:")
 for link, waits in sorted(all_waiting_times.items()):
     if waits:
         avg = sum(waits) / len(waits)
-        print(f"   {link:<7} ➜ {avg * 1000:.3f} ms ({len(waits)} paket)")
+        print(f"   {link:<7} ➜ {YELLOW}{avg * 1000:.3f} ms{RESET} ({len(waits)} packets)")
+
+# Genel ortalama bekleme süresi
+total_waits = sum(len(waits) for waits in all_waiting_times.values())
+total_wait_time = sum(sum(waits) for waits in all_waiting_times.values())
+overall_avg_wait = (total_wait_time / total_waits) * 1000 if total_waits else 0
+
+wait_color = RED if overall_avg_wait > 500 else (YELLOW if overall_avg_wait > 200 else GREEN)
+print(f"\n🕒 Overall Avg. Waiting Time: {wait_color}{overall_avg_wait:.3f} ms{RESET} ({total_waits} total packets)\n")
 
