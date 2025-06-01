@@ -1,0 +1,72 @@
+# yeni simülatör
+set ns [new Simulator]
+
+# dosya isimleri
+set tracefileName "case1_4_tcp_udp_004_5mb.trace"
+set namfileName "case1_4_tcp_udp_004_5mb.nam"
+
+# nam ve trace dosyaları
+set namfile [open $namfileName w]
+$ns namtrace-all $namfile
+
+set tracefile [open $tracefileName w]
+$ns trace-all $tracefile
+
+# düğümler
+set n1 [$ns node]
+set n2 [$ns node]
+set r1 [$ns node]
+set r2 [$ns node]
+set sink1 [$ns node]
+set sink2 [$ns node]
+
+# bağlantılar
+$ns duplex-link $n1 $r1 5Mb 20ms DropTail
+$ns duplex-link $n2 $r1 5Mb 20ms DropTail
+$ns duplex-link $r1 $r2 5Mb 40ms DropTail
+$ns duplex-link $r2 $sink1 5Mb 20ms DropTail
+$ns duplex-link $r2 $sink2 5Mb 20ms DropTail
+
+# udp - cbr trafiği
+set udp [new Agent/UDP]
+$ns attach-agent $n1 $udp
+
+set null [new Agent/Null]
+$ns attach-agent $sink1 $null
+$ns connect $udp $null
+
+set cbr [new Application/Traffic/CBR]
+$cbr set packetSize_ 1000
+$cbr set interval_ 0.001
+$cbr attach-agent $udp
+
+# tcp - ftp trafiği
+set tcp [new Agent/TCP]
+$ns attach-agent $n2 $tcp
+
+set sink [new Agent/TCPSink]
+$ns attach-agent $sink2 $sink
+$ns connect $tcp $sink
+
+set ftp [new Application/FTP]
+$ftp attach-agent $tcp
+
+# trafik zamanlaması
+$ns at 1.0 "$cbr start"
+$ns at 1.5 "$ftp start"
+$ns at 58.0 "$cbr stop"
+$ns at 59.0 "$ftp stop"
+
+# simülasyon bitişi
+proc finish {} {
+    global ns namfile tracefile tracefileName namfileName
+    $ns flush-trace
+    close $tracefile
+    close $namfile
+    exec echo "$tracefileName" > .last_trace_file
+    exec nam $namfileName &
+    exit 0
+}
+
+$ns at 60.0 "finish"
+$ns run

@@ -1,0 +1,67 @@
+# Yeni simülatör
+set ns [new Simulator]
+
+# Dosya isimleri
+set tracefileName "case3_2_tcp_delay_red.trace"
+set namfileName "case3_2_tcp_delay_red.nam"
+
+# Trace ve NAM dosyaları
+set namfile [open $namfileName w]
+$ns namtrace-all $namfile
+set tracefile [open $tracefileName w]
+$ns trace-all $tracefile
+
+# Düğümler
+set n1 [$ns node]
+set n2 [$ns node]
+set r1 [$ns node]
+set sink1 [$ns node]
+set sink2 [$ns node]
+
+# Kuyruk tipi: RED
+$ns duplex-link $n1 $r1 512Kb 50ms RED
+$ns duplex-link $n2 $r1 512Kb 50ms RED
+$ns duplex-link $r1 $sink1 512Kb 50ms RED
+$ns duplex-link $r1 $sink2 512Kb 50ms RED
+
+# TCP bağlantıları ve sinkler
+set tcp1 [new Agent/TCP]
+$ns attach-agent $n1 $tcp1
+set sinkA [new Agent/TCPSink]
+$ns attach-agent $sink1 $sinkA
+$ns connect $tcp1 $sinkA
+
+set tcp2 [new Agent/TCP]
+$ns attach-agent $n2 $tcp2
+set sinkB [new Agent/TCPSink]
+$ns attach-agent $sink2 $sinkB
+$ns connect $tcp2 $sinkB
+
+# Uygulamalar
+set ftp1 [new Application/FTP]
+$ftp1 attach-agent $tcp1
+set ftp2 [new Application/FTP]
+$ftp2 attach-agent $tcp2
+
+# Zamanlama
+$ns at 1.0 "$ftp1 start"
+$ns at 2.0 "$ftp2 start"
+$ns at 57.0 "$ftp1 stop"
+$ns at 58.0 "$ftp2 stop"
+
+# Bitirme fonksiyonu
+proc finish {} {
+    global ns tracefile tracefileName namfile namfileName
+    $ns flush-trace
+    close $tracefile
+    close $namfile
+    set last_file [open ".last_trace_file" w]
+    puts $last_file $tracefileName
+    close $last_file
+    exec nam $namfileName &
+    exit 0
+}
+
+$ns at 60.0 "finish"
+$ns run
+
