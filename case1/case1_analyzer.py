@@ -2,9 +2,10 @@ import os
 import re
 import matplotlib
 import matplotlib.pyplot as plt
-matplotlib.use("TkAgg")
+matplotlib.use("TkAgg")  # GUI destekli grafik
 
-def extract_case1_params(ns_filename):
+# --- NS dosyasından interval, bandwidth, trace file ismini çek
+def extract_ns_parameters(ns_filename):
     interval = None
     bandwidth = None
     tracefile = None
@@ -14,16 +15,22 @@ def extract_case1_params(ns_filename):
                 match = re.search(r"\"(.+\.trace)\"", line)
                 if match:
                     tracefile = match.group(1)
-            elif "$cbr set interval_" in line:
-                match = re.search(r"interval_\s+([\d\.]+)", line)
+
+            # Tüm "interval_" içeren satırları yakala (cbr1, cbr4 fark etmez)
+            elif "interval_" in line:
+                match = re.search(r"interval_[^0-9]*([\d\.]+)", line)
                 if match:
                     interval = float(match.group(1))
+
+            # Sadece n1–r1 bağlantısından bandwidth çekiyoruz (diğerleri istenirse eklenebilir)
             elif "duplex-link" in line and "$n1" in line:
                 match = re.search(r"duplex-link\s+\$n1\s+\$r1\s+([\d\.]+)Mb", line)
                 if match:
                     bandwidth = float(match.group(1))
+
     return tracefile, interval, bandwidth
 
+# --- Trace dosyasını analiz et
 def analyze_trace(trace_file):
     sent = recv = drop = 0
     start = end = None
@@ -54,11 +61,10 @@ def analyze_trace(trace_file):
             elif event == "d":
                 drop += 1
 
-            if from_node == "0" and to_node == "2":
-                if event == "+":
-                    enqueue_times[pkt_id] = time
-                elif event == "-" and pkt_id in enqueue_times:
-                    waiting_times.append(time - enqueue_times[pkt_id])
+            if event == "+":
+                enqueue_times[pkt_id] = time
+            elif event == "-" and pkt_id in enqueue_times:
+                waiting_times.append(time - enqueue_times[pkt_id])
 
     duration = (end - start) if start and end else 1
     throughput = sum(packet_sizes) * 8 / duration / 1000  # kbps
@@ -67,16 +73,16 @@ def analyze_trace(trace_file):
 
     return sent, recv, drop, duration, throughput, drop_rate, avg_wait
 
-# 🔁 Sadece case1_*.ns dosyalarını analiz et
-data = []
+# --- Tüm case1_*.ns dosyalarını analiz et
+results = []
 for file in os.listdir():
     if file.startswith("case1_") and file.endswith(".ns"):
-        tracefile, interval, bandwidth = extract_case1_params(file)
+        tracefile, interval, bandwidth = extract_ns_parameters(file)
         if not tracefile or not os.path.exists(tracefile):
-            print(f"[!] Atlandı: {file} (tracefile yok)")
+            print(f"[Skipped] {file} (trace file not found)")
             continue
         sent, recv, drop, dur, tp, dr, wait = analyze_trace(tracefile)
-        data.append({
+        results.append({
             "name": file,
             "interval": interval,
             "bandwidth": bandwidth,
@@ -85,46 +91,31 @@ for file in os.listdir():
             "avg_wait": wait
         })
 
-# ✅ Grafik 1: Drop Rate vs Avg. Waiting Time
-plt.figure(figsize=(8, 6))
-x = [d["drop_rate"] for d in data]
-y = [d["avg_wait"] for d in data]
-labels = [d["name"] for d in data]
-plt.scatter(x, y, s=100, color="red")
-for i, label in enumerate(labels):
-    plt.annotate(label, (x[i], y[i]))
-plt.xlabel("Drop Oranı (%)")
-plt.ylabel("Ortalama Bekleme Süresi (ms)")
-plt.title("Drop Rate vs Avg. Waiting Time")
-plt.grid(True)
-plt.tight_layout()
-plt.show()
+# --- Grafik fonksiyonu
+def plot_metric(xkey, ykey, xlabel, ylabel, title, color):
+    x, y, labels = [], [], []
+    for d in results:
+        if d[xkey] is not None and d[ykey] is not None:
+            x.append(d[xkey])
+            y.append(d[ykey])
+            labels.append(d["name"])
+    plt.figure(figsize=(8, 6))
+    plt.scatter(x, y, s=100, color=color)
+    for i, label in enumerate(labels):
+        plt.annotate(label, (x[i], y[i]), fontsize=8, xytext=(5, 5), textcoords="offset points")
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.title(title)
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
 
-# ✅ Grafik 2: Interval vs Throughput
-plt.figure(figsize=(8, 6))
-x = [d["interval"] for d in data]
-y = [d["throughput"] for d in data]
-plt.scatter(x, y, s=100, color="blue")
-for i, label in enumerate(labels):
-    plt.annotate(label, (x[i], y[i]))
-plt.xlabel("Interval (s)")
-plt.ylabel("Throughput (Kbps)")
-plt.title("Interval vs Throughput")
-plt.grid(True)
-plt.tight_layout()
-plt.show()
+# --- 6 Grafik Üretimi ---
+plot_metric("interval", "throughput", "Interval (s)", "Throughput (Kbps)", "Interval vs Throughput", "blue")
+plot_metric("interval", "drop_rate", "Interval (s)", "Drop Rate (%)", "Interval vs Drop Rate", "red")
+plot_metric("interval", "avg_wait", "Interval (s)", "Average Waiting Time (ms)", "Interval vs Avg. Waiting Time", "green")
 
-# ✅ Grafik 3: Bandwidth vs Throughput
-plt.figure(figsize=(8, 6))
-x = [d["bandwidth"] for d in data]
-y = [d["throughput"] for d in data]
-plt.scatter(x, y, s=100, color="green")
-for i, label in enumerate(labels):
-    plt.annotate(label, (x[i], y[i]))
-plt.xlabel("Bandwidth (Mb)")
-plt.ylabel("Throughput (Kbps)")
-plt.title("Bandwidth vs Throughput")
-plt.grid(True)
-plt.tight_layout()
-plt.show()
+plot_metric("bandwidth", "throughput", "Bandwidth (Mb)", "Throughput (Kbps)", "Bandwidth vs Throughput", "blue")
+plot_metric("bandwidth", "drop_rate", "Bandwidth (Mb)", "Drop Rate (%)", "Bandwidth vs Drop Rate", "red")
+plot_metric("bandwidth", "avg_wait", "Bandwidth (Mb)", "Average Waiting Time (ms)", "Bandwidth vs Avg. Waiting Time", "green")
 

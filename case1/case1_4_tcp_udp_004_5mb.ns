@@ -37,7 +37,7 @@ $ns connect $udp $null
 
 set cbr [new Application/Traffic/CBR]
 $cbr set packetSize_ 1000
-$cbr set interval_ 0.001
+$cbr set interval_ 0.004
 $cbr attach-agent $udp
 
 # tcp - ftp trafiği
